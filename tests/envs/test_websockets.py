@@ -33,6 +33,14 @@ from unittest.mock import patch
 import pytest
 import requests
 
+# Check for optional dependencies
+NUMPY_AVAILABLE = False
+try:
+    import numpy  # noqa: F401
+    NUMPY_AVAILABLE = True
+except ImportError:
+    pass
+
 # Add the project root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -151,6 +159,7 @@ class TestSmokeFactoryPattern:
 
         env.close()
 
+    @pytest.mark.skipif(not NUMPY_AVAILABLE, reason="numpy not installed (required for connect4_env)")
     def test_smoke_connect4_env_factory_pattern(self):
         """Test that Connect4Environment can be created via factory."""
         from envs.connect4_env.server.connect4_environment import Connect4Environment
@@ -426,6 +435,7 @@ class TestEchoEnvironment:
             assert result.observation.message_length == len("Hello World!")
 
 
+@pytest.mark.skipif(not NUMPY_AVAILABLE, reason="numpy not installed (required for connect4_env)")
 class TestConnect4Environment:
     """Test Connect4Environment specifically."""
 
