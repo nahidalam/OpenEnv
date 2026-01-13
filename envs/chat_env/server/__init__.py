@@ -1,11 +1,16 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""Server components for ChatEnv.
 
-"""Chat environment server components."""
+This module is optional and requires torch. We guard imports so the OpenEnv
+package can be imported and tested without torch installed.
+"""
 
-from .chat_environment import ChatEnvironment
+try:
+    from .chat_environment import ChatEnvironment  # noqa: F401
+except ModuleNotFoundError as e:
+    if e.name == "torch":
+        ChatEnvironment = None  # type: ignore
+    else:
+        raise
 
 __all__ = ["ChatEnvironment"]
+

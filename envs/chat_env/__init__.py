@@ -1,12 +1,17 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """Chat Environment - A chat-based environment for LLMs with tokenization support."""
 
-from .client import ChatEnv
-from .models import ChatAction, ChatObservation, ChatState
+try:
+    from .models import ChatAction, ChatObservation, ChatState  # noqa: F401
+    from .client import ChatEnv  # noqa: F401
+except ModuleNotFoundError as e:
+    # Allow importing envs.chat_env without torch installed.
+    if e.name == "torch":
+        ChatAction = None  # type: ignore
+        ChatObservation = None  # type: ignore
+        ChatState = None  # type: ignore
+        ChatEnv = None  # type: ignore
+    else:
+        raise
 
 __all__ = ["ChatAction", "ChatObservation", "ChatState", "ChatEnv"]
+

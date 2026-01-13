@@ -10,8 +10,10 @@ Test suite for ChatEnvironment.
 Proper unit tests with assertions to verify correct behavior.
 """
 
-import torch
+import pytest
+pytest.importorskip("torch")
 
+import torch
 from openenv.core.env_server.interfaces import Message
 
 from ..models import ChatAction
