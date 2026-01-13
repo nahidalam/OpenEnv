@@ -148,6 +148,119 @@ Type-safe data structures:
 - `State`: Episode state tracking
 - `StepResult`: Combines observation, reward, done flag
 
+## Counterfactual & Vision Modules
+
+OpenEnv includes optional modules for **counterfactual reasoning** and **vision-first environments** like Robot City. These are additive utilities that don't change the core OpenEnv protocol.
+
+### Counterfactual Module (`openenv.counterfactual`)
+
+Enables "snapshot → imagine → compare → act" workflows for world-model agents:
+
+```python
+from openenv.counterfactual import (
+    Snapshot, Snapshotable, simulate, compare, TrajectoryTree,
+    summary_to_log_entries, write_jsonl
+)
+
+# Environments implement Snapshotable protocol
+class MyEnv:
+    def snapshot(self) -> Snapshot: ...
+    def restore(self, snapshot: Snapshot) -> None: ...
+
+# Compare counterfactual action candidates
+env = MyEnv()
+snap = env.snapshot()
+results = compare(
+    env,
+    base_snapshot=snap,
+    candidates=[[action_a], [action_b], [action_c]],
+    horizon=5,
+)
+best_action = results[0].action_seq[0]  # Highest scored
+
+# Environment is always restored to real state after compare()
+```
+
+**Key Features:**
+- **No mutation leakage**: `simulate()`/`compare()` restore env state automatically
+- **Deterministic replay**: RNG state capture/restore for reproducibility
+- **Trajectory logging**: JSONL export for analysis
+
+**Components:**
+| Module | Description |
+|--------|-------------|
+| `snapshot.py` | `Snapshot` dataclass, RNG capture/restore utilities |
+| `simulate.py` | Run rollouts without mutating real env |
+| `compare.py` | Evaluate multiple action candidates |
+| `tree.py` | `TrajectoryTree` for branching trajectories |
+| `logging.py` | `make_real_step_row()`, `make_counterfactual_row()`, `rows_from_tree()`, JSONL export |
+| `serialize.py` | `summary_to_json()`, `candidate_results_to_json()` for JSON export |
+| `protocols.py` | `Snapshotable`, `Stepable` protocols |
+
+### Vision Module (`openenv.vision`)
+
+Utilities for vision-first environments with image observations:
+
+```python
+from openenv.vision import (
+    encode_image_to_base64,
+    decode_image_from_base64,
+    pack_frames,
+    unpack_frames,
+    summarize_frame,
+    safe_jsonify_observation,
+)
+
+# Encode numpy array to base64 PNG
+import numpy as np
+frame = np.zeros((100, 100, 3), dtype=np.uint8)
+encoded = encode_image_to_base64(frame, format="png", quality=90)
+
+# Decode back to numpy array
+decoded = decode_image_from_base64(encoded)  # uint8 HxWxC
+
+# Pack multiple frames for transport
+frames = [np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8) for _ in range(10)]
+packed = pack_frames(frames, max_frames=5, stride=2, format="jpg", quality=85)
+unpacked = unpack_frames(packed)
+
+# Get frame summary (height, width, channels, mean, std)
+summary = summarize_frame(frame)
+
+# Safely convert observations to JSON (handles images, arrays, dataclasses)
+obs = {"frame": frame, "reward": 1.0, "done": False}
+json_safe = safe_jsonify_observation(obs)  # frame becomes base64 jpg
+```
+
+**Key Features:**
+- **Image encoding**: Base64 PNG/JPEG with configurable quality
+- **Frame packing**: Pack/unpack frame sequences with stride and limits
+- **Safe JSON conversion**: Handles numpy arrays, dataclasses, pydantic models
+- **Optional protocol**: `VisionObservation` for standard frame access
+
+**Functions:**
+| Function | Description |
+|----------|-------------|
+| `encode_image_to_base64(image, format, quality)` | Encode numpy/PIL image to base64 |
+| `decode_image_from_base64(data)` | Decode base64 to numpy array (uint8 HxWxC) |
+| `pack_frames(frames, max_frames, stride, format, quality)` | Pack frame list to base64 strings |
+| `unpack_frames(encoded)` | Unpack base64 strings to numpy arrays |
+| `summarize_frame(frame)` | Get frame stats: height, width, channels, mean, std |
+| `safe_jsonify_observation(obj)` | Convert any observation to JSON-safe format |
+
+See [`src/openenv/vision/README.md`](src/openenv/vision/README.md) for detailed documentation.
+
+### Running Tests
+
+```bash
+# Run counterfactual and vision tests
+pytest tests/test_counterfactual.py tests/test_vision.py -v
+
+# Vision tests skip gracefully if PIL/numpy not installed
+```
+
+---
+
 ## Project Structure
 
 ### For Environment Creators
