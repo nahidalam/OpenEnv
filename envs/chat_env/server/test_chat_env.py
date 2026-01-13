@@ -10,7 +10,13 @@ Test suite for ChatEnvironment.
 Proper unit tests with assertions to verify correct behavior.
 """
 
-import torch
+import pytest
+
+# Must skip at module level BEFORE importing chat_env modules that require torch
+try:
+    import torch
+except ImportError:
+    pytest.skip("torch not installed (optional chat_env dependency)", allow_module_level=True)
 
 from openenv.core.env_server.interfaces import Message
 
