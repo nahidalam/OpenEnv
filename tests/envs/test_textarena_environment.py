@@ -1,4 +1,5 @@
 import pytest
+pytest.importorskip("nltk")
 
 from textarena_env.server.environment import TextArenaEnvironment
 from textarena_env.models import TextArenaMessage, TextArenaAction
