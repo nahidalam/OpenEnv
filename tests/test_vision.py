@@ -133,74 +133,39 @@ def test_encode_pil_image():
     assert decoded.size == (50, 50)
 
 
-# --- Frame buffer tests ---
+# --- Frame summary tests (new API) ---
 
-@pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
 @pytest.mark.skipif(not NUMPY_AVAILABLE, reason="numpy not installed")
-def test_frame_buffer_basic():
-    """Test basic frame buffer operations."""
-    from openenv.vision import FrameBuffer
-    
-    buffer = FrameBuffer(max_frames=5, store_thumbnails=True)
-    
-    # Add frames
-    for i in range(3):
-        img = np.zeros((64, 64, 3), dtype=np.uint8)
-        img[:, :, 0] = i * 80  # Different red levels
-        summary = buffer.add(img, metadata={"frame_idx": i})
-        assert summary.step == i
-        assert summary.width == 64
-        assert summary.height == 64
-    
-    assert len(buffer) == 3
-    assert buffer.get_latest(1)[0].step == 2
-
-
-@pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
-@pytest.mark.skipif(not NUMPY_AVAILABLE, reason="numpy not installed")
-def test_frame_buffer_max_frames():
-    """Test frame buffer respects max_frames limit."""
-    from openenv.vision import FrameBuffer
-    
-    buffer = FrameBuffer(max_frames=3)
-    
-    # Add more than max
-    for i in range(5):
-        img = np.zeros((32, 32, 3), dtype=np.uint8)
-        buffer.add(img)
-    
-    assert len(buffer) == 3
-    # Should have steps 2, 3, 4 (oldest dropped)
-    steps = [f.step for f in buffer.get_frames()]
-    assert steps == [2, 3, 4]
-
-
-@pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
-@pytest.mark.skipif(not NUMPY_AVAILABLE, reason="numpy not installed")
-def test_frame_summary():
-    """Test frame summary creation."""
+def test_frame_summary_new_api():
+    """Test new summarize_frame function."""
     from openenv.vision import summarize_frame
     
     img = np.zeros((128, 96, 3), dtype=np.uint8)
     
-    summary = summarize_frame(
-        img,
-        step=5,
-        include_encoded=True,
-        include_thumbnail=True,
-        metadata={"custom": "value"},
-    )
+    summary = summarize_frame(img)
     
-    assert summary.step == 5
-    assert summary.width == 96
-    assert summary.height == 128
-    assert summary.encoded is not None
-    assert summary.thumbnail is not None
-    assert summary.metadata["custom"] == "value"
+    assert summary["height"] == 128
+    assert summary["width"] == 96
+    assert summary["channels"] == 3
+    assert "mean" in summary
+    assert "std" in summary
+
+
+@pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
+@pytest.mark.skipif(not NUMPY_AVAILABLE, reason="numpy not installed")
+def test_pack_unpack_frames():
+    """Test pack/unpack frame functions."""
+    from openenv.vision import pack_frames, unpack_frames
     
-    # to_dict should be JSON-serializable
-    d = summary.to_dict()
-    json.dumps(d)  # Should not raise
+    frames = [np.zeros((32, 32, 3), dtype=np.uint8) for _ in range(3)]
+    
+    packed = pack_frames(frames, format="png")
+    assert len(packed) == 3
+    
+    unpacked = unpack_frames(packed)
+    assert len(unpacked) == 3
+    for f in unpacked:
+        assert f.shape == (32, 32, 3)
 
 
 # --- Protocol tests ---

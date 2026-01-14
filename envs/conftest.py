@@ -41,6 +41,15 @@ def pytest_ignore_collect(collection_path, config):
         except ImportError:
             return True
     
+    # Skip robot_city_env if numpy or PIL not installed
+    if "robot_city_env" in path_str:
+        try:
+            import numpy  # noqa: F401
+            from PIL import Image  # noqa: F401
+            return False
+        except ImportError:
+            return True
+    
     # Skip websearch_env (uses deprecated openenv_core imports)
     if "websearch_env" in path_str:
         return True

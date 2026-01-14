@@ -1,0 +1,33 @@
+# Robot City Environment Configuration
+name: robot_city_env
+version: "0.1.0"
+description: Visual multi-robot simulation environment with pedestrians, obstacles, and failure injection
+
+# Entry points
+server:
+  module: server.app
+  app: app
+
+# Environment settings
+settings:
+  default_scenario: intersection_crosswalk
+  default_num_robots: 1
+  default_num_peds: 4
+  max_steps: 200
+  render_size: 128
+
+# Dependencies
+dependencies:
+  - numpy
+  - pillow
+  - pydantic
+  - fastapi
+  - uvicorn
+
+# Tags for discovery
+tags:
+  - visual
+  - multi-agent
+  - robotics
+  - simulation
+  - counterfactual

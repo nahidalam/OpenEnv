@@ -267,10 +267,10 @@ def make_vision_frame_processor(
     summary_to_log_entries() to extract and encode frames.
     
     Args:
-        include_thumbnail: Include small thumbnail
+        include_thumbnail: Include small thumbnail (encoded as base64)
         include_full: Include full encoded frame
         thumbnail_size: Size for thumbnails
-        format: Encoding format
+        format: Encoding format ("png" or "jpg")
         
     Returns:
         Frame processor function
@@ -278,7 +278,7 @@ def make_vision_frame_processor(
     def processor(obs: Any, step: int) -> Dict[str, Any]:
         # Try to import vision module
         try:
-            from openenv.vision import summarize_frame
+            from openenv.vision import summarize_frame, encode_image_to_base64
             from openenv.vision.protocols import extract_frame
         except ImportError:
             return {}
@@ -288,17 +288,31 @@ def make_vision_frame_processor(
         if frame is None:
             return {}
         
-        # Create summary
-        summary = summarize_frame(
-            frame,
-            step=step,
-            include_encoded=include_full,
-            include_thumbnail=include_thumbnail,
-            thumbnail_size=thumbnail_size,
-            format=format,
-        )
+        # Create summary with new API
+        result = summarize_frame(frame)
+        result["step"] = step
         
-        return summary.to_dict()
+        # Optionally add encoded frame
+        if include_full:
+            result["encoded"] = encode_image_to_base64(frame, format=format)
+        
+        # Optionally add thumbnail
+        if include_thumbnail:
+            try:
+                from PIL import Image
+                import numpy as np
+                
+                # Resize frame to thumbnail
+                if isinstance(frame, np.ndarray):
+                    img = Image.fromarray(frame)
+                else:
+                    img = frame
+                thumb = img.resize(thumbnail_size, Image.Resampling.LANCZOS)
+                result["thumbnail"] = encode_image_to_base64(np.array(thumb), format=format)
+            except Exception:
+                pass
+        
+        return result
     
     return processor
 
