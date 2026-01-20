@@ -78,6 +78,9 @@ class SimState:
     dt: float = 0.05  # Time step
     bounds: Tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)  # xmin, ymin, xmax, ymax
     rng: random.Random = field(default_factory=random.Random)
+    # Trail history: list of (x, y) positions per robot, most recent last
+    robot_trails: Dict[int, List[Tuple[float, float]]] = field(default_factory=dict)
+    trail_max_length: int = 20
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -86,6 +89,17 @@ class SimState:
             "obstacles": [o.to_dict() for o in self.obstacles],
             "step_count": self.step_count,
         }
+    
+    def record_robot_positions(self) -> None:
+        """Record current robot positions for trail rendering."""
+        for robot in self.robots:
+            rid = robot.robot_id
+            if rid not in self.robot_trails:
+                self.robot_trails[rid] = []
+            self.robot_trails[rid].append((robot.x, robot.y))
+            # Keep only last N positions
+            if len(self.robot_trails[rid]) > self.trail_max_length:
+                self.robot_trails[rid] = self.robot_trails[rid][-self.trail_max_length:]
     
     def copy(self) -> "SimState":
         """Create a deep copy of the state."""
@@ -97,6 +111,8 @@ class SimState:
             dt=self.dt,
             bounds=self.bounds,
             rng=random.Random(),
+            robot_trails={k: list(v) for k, v in self.robot_trails.items()},
+            trail_max_length=self.trail_max_length,
         )
         new_state.rng.setstate(self.rng.getstate())
         return new_state
@@ -138,20 +154,100 @@ def apply_action(robot: Robot, move: str, speed: float = 1.0) -> None:
         robot.vy = 0.0
 
 
-def update_robot(robot: Robot, bounds: Tuple[float, float, float, float]) -> None:
-    """Update robot position and clamp to bounds."""
+def push_circle_out_of_rect(cx: float, cy: float, cr: float,
+                            rx: float, ry: float, rw: float, rh: float) -> Tuple[float, float]:
+    """Push a circle out of a rectangle if overlapping.
+    
+    Returns the new (cx, cy) position outside the rectangle.
+    """
+    half_w = rw / 2
+    half_h = rh / 2
+    
+    # Rectangle bounds
+    left = rx - half_w
+    right = rx + half_w
+    top = ry + half_h
+    bottom = ry - half_h
+    
+    # Find closest point on rectangle to circle center
+    closest_x = max(left, min(right, cx))
+    closest_y = max(bottom, min(top, cy))
+    
+    # Distance from circle center to closest point
+    dx = cx - closest_x
+    dy = cy - closest_y
+    dist_sq = dx * dx + dy * dy
+    
+    # If not colliding, return original position
+    if dist_sq >= cr * cr:
+        return cx, cy
+    
+    # Handle case where circle center is inside rectangle
+    if dist_sq < 1e-10:
+        # Circle center is inside rectangle, push out to nearest edge
+        dist_to_left = cx - left
+        dist_to_right = right - cx
+        dist_to_top = top - cy
+        dist_to_bottom = cy - bottom
+        
+        min_dist = min(dist_to_left, dist_to_right, dist_to_top, dist_to_bottom)
+        
+        if min_dist == dist_to_left:
+            return left - cr, cy
+        elif min_dist == dist_to_right:
+            return right + cr, cy
+        elif min_dist == dist_to_top:
+            return cx, top + cr
+        else:
+            return cx, bottom - cr
+    
+    # Push circle out along the collision normal
+    dist = math.sqrt(dist_sq)
+    nx = dx / dist  # Normal direction
+    ny = dy / dist
+    
+    # Move circle center so it's exactly touching the rectangle
+    penetration = cr - dist
+    new_cx = cx + nx * (penetration + 0.001)  # Small epsilon to ensure separation
+    new_cy = cy + ny * (penetration + 0.001)
+    
+    return new_cx, new_cy
+
+
+def update_robot(robot: Robot, bounds: Tuple[float, float, float, float], 
+                 obstacles: List[Obstacle] = None) -> None:
+    """Update robot position, clamp to bounds, and prevent obstacle penetration."""
+    # Store old position
+    old_x, old_y = robot.x, robot.y
+    
+    # Apply velocity
     robot.x += robot.vx
     robot.y += robot.vy
     
-    # Clamp to bounds
+    # Clamp to world bounds
     xmin, ymin, xmax, ymax = bounds
     robot.x = max(xmin + robot.radius, min(xmax - robot.radius, robot.x))
     robot.y = max(ymin + robot.radius, min(ymax - robot.radius, robot.y))
+    
+    # Check and resolve obstacle collisions
+    if obstacles:
+        for obs in obstacles:
+            if circle_rect_collision(robot.x, robot.y, robot.radius,
+                                    obs.x, obs.y, obs.width, obs.height):
+                # Push robot out of obstacle
+                robot.x, robot.y = push_circle_out_of_rect(
+                    robot.x, robot.y, robot.radius,
+                    obs.x, obs.y, obs.width, obs.height
+                )
+        
+        # Final bounds clamp after obstacle resolution
+        robot.x = max(xmin + robot.radius, min(xmax - robot.radius, robot.x))
+        robot.y = max(ymin + robot.radius, min(ymax - robot.radius, robot.y))
 
 
 def update_pedestrian(ped: Pedestrian, bounds: Tuple[float, float, float, float], 
-                      rng: random.Random) -> None:
-    """Update pedestrian with stochastic motion and boundary bounce."""
+                      rng: random.Random, obstacles: List[Obstacle] = None) -> None:
+    """Update pedestrian with stochastic motion, boundary bounce, and obstacle avoidance."""
     # Add noise to velocity
     ped.vx += rng.gauss(0, ped.noise_sigma)
     ped.vy += rng.gauss(0, ped.noise_sigma)
@@ -175,6 +271,23 @@ def update_pedestrian(ped: Pedestrian, bounds: Tuple[float, float, float, float]
     if ped.y <= ymin + ped.radius or ped.y >= ymax - ped.radius:
         ped.vy *= -1
         ped.y = max(ymin + ped.radius, min(ymax - ped.radius, ped.y))
+    
+    # Bounce off obstacles
+    if obstacles:
+        for obs in obstacles:
+            if circle_rect_collision(ped.x, ped.y, ped.radius,
+                                    obs.x, obs.y, obs.width, obs.height):
+                # Push pedestrian out and reverse velocity
+                new_x, new_y = push_circle_out_of_rect(
+                    ped.x, ped.y, ped.radius,
+                    obs.x, obs.y, obs.width, obs.height
+                )
+                # Reverse velocity component based on push direction
+                if abs(new_x - ped.x) > abs(new_y - ped.y):
+                    ped.vx *= -1
+                else:
+                    ped.vy *= -1
+                ped.x, ped.y = new_x, new_y
 
 
 def update_state(state: SimState, robot_id: int, move: str, speed: float = 1.0) -> None:
@@ -183,13 +296,16 @@ def update_state(state: SimState, robot_id: int, move: str, speed: float = 1.0) 
     if 0 <= robot_id < len(state.robots):
         apply_action(state.robots[robot_id], move, speed)
     
-    # Update all robots
+    # Update all robots (with obstacle collision prevention)
     for robot in state.robots:
-        update_robot(robot, state.bounds)
+        update_robot(robot, state.bounds, state.obstacles)
     
-    # Update all pedestrians
+    # Update all pedestrians (with obstacle collision prevention)
     for ped in state.pedestrians:
-        update_pedestrian(ped, state.bounds, state.rng)
+        update_pedestrian(ped, state.bounds, state.rng, state.obstacles)
+    
+    # Record robot positions for trail rendering
+    state.record_robot_positions()
     
     state.step_count += 1
 

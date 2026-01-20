@@ -164,6 +164,7 @@ def _create_sidewalk_delivery(num_robots: int = 1, num_peds: int = 5,
 # Scenario registry
 SCENARIOS: Dict[str, Any] = {
     "intersection_crosswalk": _create_intersection_crosswalk,
+    "crosswalk_occlusion": _create_intersection_crosswalk,  # Alias for WMP compatibility
     "warehouse_aisles": _create_warehouse_aisles,
     "sidewalk_delivery": _create_sidewalk_delivery,
 }
